@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Exploring Block</title>
+<style>
+body{margin:0;overflow:hidden;font-family:Arial;}
+canvas{display:block;}
+#score{
+position:fixed;top:10px;left:50%;transform:translateX(-50%);
+font-size:22px;font-weight:bold;
+}
+#menu,#modes,#gameover,#shop,#settings{
+position:fixed;inset:0;
+display:flex;flex-direction:column;
+justify-content:center;align-items:center;
+}
+#menu{
+background:
+linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.7)),
+url("menu_bg.png") center/cover no-repeat;
+color:white;
+}
+#menu img{width:200px;margin-bottom:20px;}
+#gameover,#shop,#settings,#modes{background:white;}
+.menu-btn{
+width:220px;padding:14px;margin:10px;font-size:18px;
+border:none;border-radius:15px;
+background:rgba(255,255,255,0.9);
+font-weight:bold;
+box-shadow:0 4px 8px rgba(0,0,0,0.3);
+}
+</style>
+</head>
+<body>
+
+<div id="score">Score: 0 | High: 0</div>
+<canvas id="game"></canvas>
+
+<div id="menu">
+<img src="logo.png">
+<button class="menu-btn" onclick="openModes()">Play</button>
+<button class="menu-btn" onclick="openShop()">Shop</button>
+<button class="menu-btn" onclick="openSettings()">Settings</button>
+</div>
+
+<div id="modes" style="display:none">
+<h2>Select Mode</h2>
+<button class="menu-btn" onclick="startGame('classic')">Classic</button>
+<button class="menu-btn" onclick="startGame('side')">Side</button>
+<button class="menu-btn" onclick="startGame('vertical')">Vertical</button>
+<button class="menu-btn" onclick="backMenu()">Back</button>
+</div>
+
+<div id="shop" style="display:none">
+<h1>Shop</h1>
+<p>Coins: <span id="coinText">0</span></p>
+<button class="menu-btn" onclick="buySkin('square')">Square (Free)</button>
+<button class="menu-btn" onclick="buySkin('circle')">Circle (50)</button>
+<button class="menu-btn" onclick="buySkin('triangle')">Triangle (50)</button>
+<button class="menu-btn" onclick="buySkin('star')">Star (100)</button>
+<button class="menu-btn" onclick="backMenu()">Back</button>
+</div>
+
+<div id="settings" style="display:none">
+<h1>Settings</h1>
+<button class="menu-btn" onclick="toggleSound()">Sound: <span id="soundText">ON</span></button>
+<button class="menu-btn" onclick="backMenu()">Back</button>
+</div>
+
+<div id="gameover" style="display:none">
+<h1>Game Over</h1>
+<p>Score: <span id="finalScore">0</span></p>
+<button class="menu-btn" onclick="openModes()">Restart</button>
+<button class="menu-btn" onclick="backMenu()">Menu</button>
+</div>
+
+<audio id="hitSound" src="hit.mp3"></audio>
+<audio id="coinSound" src="bonus.mp3"></audio>
+
+<script>
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+canvas.width=innerWidth; canvas.height=innerHeight;
+
+let mode="classic";
+let player, obstacles=[], coins=[], particles=[];
+let running=false;
+let speed=3, score=0;
+let highScore=localStorage.getItem("highScore")||0;
+let soundOn=true, coinCount=0, skin="square";
+
+const colors=["green","blue","red","yellow","black"];
+const scoreDiv=document.getElementById("score");
+const soundText=document.getElementById("soundText");
+const coinText=document.getElementById("coinText");
+const finalScore=document.getElementById("finalScore");
+const hitSound=document.getElementById("hitSound");
+const coinSound=document.getElementById("coinSound");
+
+let tx=0, ty=0;
+canvas.addEventListener("touchmove",e=>{
+tx=e.touches[0].clientX; ty=e.touches[0].clientY;
+});
+canvas.addEventListener("mousemove",e=>{
+tx=e.clientX; ty=e.clientY;
+});
+
+function hideAll(){
+["menu","modes","gameover","shop","settings"].forEach(id=>{
+document.getElementById(id).style.display="none";
+});
+}
+
+function openModes(){hideAll();modes.style.display="flex";}
+function backMenu(){hideAll();menu.style.display="flex";}
+function openShop(){hideAll();coinText.innerText=coinCount;shop.style.display="flex";}
+function openSettings(){hideAll();settings.style.display="flex";}
+
+function toggleSound(){
+soundOn=!soundOn;
+soundText.innerText=soundOn?"ON":"OFF";
+}
+
+function buySkin(type){
+if(type==="square"){skin="square";return;}
+if(type==="circle" && coinCount>=50){coinCount-=50;skin="circle";}
+if(type==="triangle" && coinCount>=50){coinCount-=50;skin="triangle";}
+if(type==="star" && coinCount>=100){coinCount-=100;skin="star";}
+coinText.innerText=coinCount;
+}
+
+function startGame(m){
+mode=m;
+hideAll();
+player={x:canvas.width/2,y:canvas.height/2,size:40};
+obstacles=[];coins=[];particles=[];
+speed=3;score=0;
+running=true;
+loop();
+}
+
+function spawnObstacleClassic(){
+let h=30,gap=240;
+let gapX=Math.random()*(canvas.width-gap);
+let c1=colors[Math.floor(Math.random()*colors.length)];
+let c2=colors[Math.floor(Math.random()*colors.length)];
+obstacles.push({x:0,y:-h,w:gapX,h:h,color:c1});
+obstacles.push({x:gapX+gap,y:-h,w:canvas.width-(gapX+gap),h:h,color:c2});
+coins.push({x:gapX+gap/2,y:-60,size:12});
+}
+
+function spawnObstacleSide(){
+let y=Math.random()*canvas.height;
+obstacles.push({x:-40,y,w:40,h:120,dx:3});
+}
+
+function spawnObstacleVertical(){
+let x=Math.random()*canvas.width;
+obstacles.push({x,y:-40,w:120,h:40,dy:3});
+}
+
+function explode(x,y){
+for(let i=0;i<20;i++){
+particles.push({x,y,vx:(Math.random()-0.5)*6,vy:(Math.random()-0.5)*6,life:30});
+}
+}
+
+function drawPlayer(){
+ctx.fillStyle="cyan";
+if(skin==="square") ctx.fillRect(player.x,player.y,40,40);
+else{
+ctx.beginPath();
+ctx.arc(player.x+20,player.y+20,20,0,Math.PI*2);
+ctx.fill();
+}
+}
+
+function loop(){
+if(!running) return;
+ctx.clearRect(0,0,canvas.width,canvas.height);
+
+if(tx){player.x=tx-20; player.y=ty-20;}
+drawPlayer();
+
+if(mode==="classic"){
+if(obstacles.length===0||obstacles[obstacles.length-1].y>150) spawnObstacleClassic();
+}
+if(mode==="side"){
+if(Math.random()<0.02) spawnObstacleSide();
+}
+if(mode==="vertical"){
+if(Math.random()<0.02) spawnObstacleVertical();
+}
+
+obstacles.forEach(o=>{
+o.y+=speed; o.x+=(o.dx||0);
+ctx.fillStyle=o.color||"black";
+ctx.fillRect(o.x,o.y,o.w,o.h);
+if(collide(player,o)){explode(player.x+20,player.y+20);gameOver();}
+});
+
+coins.forEach(c=>{
+c.y+=speed;
+ctx.fillStyle="gold";
+ctx.beginPath();
+ctx.arc(c.x,c.y,c.size,0,Math.PI*2);
+ctx.fill();
+if(circleCollide(player,c)){
+if(soundOn){coinSound.currentTime=0;coinSound.play();}
+coinCount++; score+=10; c.y=9999;
+}
+});
+
+particles.forEach(p=>{
+p.x+=p.vx;p.y+=p.vy;p.life--;
+ctx.fillStyle="orange";
+ctx.fillRect(p.x,p.y,4,4);
+});
+particles=particles.filter(p=>p.life>0);
+
+score++; speed+=0.0015;
+scoreDiv.innerText="Score: "+score+" | High: "+highScore;
+
+requestAnimationFrame(loop);
+}
+
+function gameOver(){
+running=false;
+if(soundOn){hitSound.currentTime=0;hitSound.play();}
+if(score>highScore){highScore=score;localStorage.setItem("highScore",highScore);}
+finalScore.innerText=score;
+gameover.style.display="flex";
+}
+
+function collide(a,b){
+return a.x<b.x+b.w && a.x+40>b.x && a.y<b.y+b.h && a.y+40>b.y;
+}
+function circleCollide(rect,c){
+let dx=Math.abs(c.x-(rect.x+20));
+let dy=Math.abs(c.y-(rect.y+20));
+return dx<40 && dy<40;
+}
+</script>
+</body>
+</html>
